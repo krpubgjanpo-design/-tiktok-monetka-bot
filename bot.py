@@ -1,24 +1,54 @@
 import os
 import sqlite3
+import asyncio
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-import asyncio
+
+
+# =====================
+# SOZLAMALAR
+# =====================
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_ID = 8483198773
 
-CARD_NUMBER = "9860 1666 5457 6569"
+CARD_NUMBER = os.getenv("CARD_NUMBER", "KARTA RAILWAY VARIABLEDA")
 CARD_OWNER = "Yunusov Ilhom"
+HELP = "@yunusovv_ku"
 
-# Monetka paketlari
-PACKAGES = {
-    "100":  {"name": "100 monetka",  "price": 5000},
-    "500":  {"name": "500 monetka",  "price": 20000},
-    "1000": {"name": "1000 monetka", "price": 35000},
-    "5000": {"name": "5000 monetka", "price": 150000},
+if not TOKEN:
+    raise ValueError("BOT_TOKEN topilmadi!")
+
+
+# =====================
+# NARXLAR
+# =====================
+
+COINS = {
+    "20": ("20 monetka", "$0.50"),
+    "40": ("40 monetka", "$0.85"),
+    "50": ("50 monetka", "$0.95"),
+    "70": ("70 monetka", "$1.35"),
+    "139": ("139 monetka", "$2.42"),
+    "210": ("210 monetka", "$3.55"),
+    "280": ("280 monetka", "$4.63"),
+    "350": ("350 monetka", "$5.80"),
 }
+
+PREMIUM = {
+    "1": ("Premium 1 oy", "50 000 so‘m"),
+    "3": ("Premium 3 oy", "180 000 so‘m"),
+    "6": ("Premium 6 oy", "230 000 so‘m"),
+    "12": ("Premium 12 oy", "300 000 so‘m"),
+}
+
+
+# =====================
+# DATABASE
+# =====================
 
 db = sqlite3.connect("bot.db")
 cur = db.cursor()
@@ -34,27 +64,43 @@ cur.execute("""
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
-    package TEXT,
-    amount INTEGER,
-    status TEXT DEFAULT 'pending'
+    product TEXT,
+    price TEXT,
+    status TEXT DEFAULT 'Kutilmoqda'
 )
 """)
 
 db.commit()
 
+
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
 
-def main_menu():
+# =====================
+# ASOSIY MENYU
+# =====================
+
+def main_menu(user_id):
     kb = InlineKeyboardBuilder()
-    kb.button(text="🪙 Monetka sotib olish", callback_data="buy")
+
+    kb.button(text="🪙 Monetka sotib olish", callback_data="coins")
+    kb.button(text="⭐ Telegram Premium", callback_data="premium")
     kb.button(text="💳 To‘lov qilish", callback_data="payment")
     kb.button(text="📋 Buyurtmalarim", callback_data="orders")
     kb.button(text="💰 Balans", callback_data="balance")
+    kb.button(text="📞 Yordam", callback_data="help")
+
+    if user_id == ADMIN_ID:
+        kb.button(text="👨‍💼 Admin panel", callback_data="admin")
+
     kb.adjust(1)
     return kb.as_markup()
 
+
+# =====================
+# START
+# =====================
 
 @dp.message(CommandStart())
 async def start(message: Message):
@@ -66,20 +112,24 @@ async def start(message: Message):
 
     await message.answer(
         "👋 Assalomu alaykum!\n\n"
-        "🪙 TikTok Monetka Savdo botiga xush kelibsiz!\n\n"
+        "🛍 Savdo botiga xush kelibsiz!\n\n"
         "Kerakli bo‘limni tanlang:",
-        reply_markup=main_menu()
+        reply_markup=main_menu(message.from_user.id)
     )
 
 
-@dp.callback_query(F.data == "buy")
-async def buy(callback: CallbackQuery):
+# =====================
+# MONETKA
+# =====================
+
+@dp.callback_query(F.data == "coins")
+async def coins(callback: CallbackQuery):
     kb = InlineKeyboardBuilder()
 
-    for key, package in PACKAGES.items():
+    for key, (name, price) in COINS.items():
         kb.button(
-            text=f"🪙 {package['name']} — {package['price']:,} so‘m",
-            callback_data=f"package:{key}"
+            text=f"🪙 {name} — {price}",
+            callback_data=f"coin:{key}"
         )
 
     kb.button(text="🔙 Orqaga", callback_data="back")
@@ -92,55 +142,282 @@ async def buy(callback: CallbackQuery):
     await callback.answer()
 
 
-@dp.callback_query(F.data.startswith("package:"))
-async def package_selected(callback: CallbackQuery):
-    key = callback.data.split(":")[1]
-    package = PACKAGES[key]
+# =====================
+# PREMIUM
+# =====================
 
-    cur.execute(
-        "INSERT INTO orders(user_id, package, amount) VALUES (?, ?, ?)",
-        (callback.from_user.id, package["name"], package["price"])
+@dp.callback_query(F.data == "premium")
+async def premium(callback: CallbackQuery):
+    kb = InlineKeyboardBuilder()
+
+    for key, (name, price) in PREMIUM.items():
+        kb.button(
+            text=f"⭐ {name} — {price}",
+            callback_data=f"prem:{key}"
+        )
+
+    kb.button(text="🔙 Orqaga", callback_data="back")
+    kb.adjust(1)
+
+    await callback.message.edit_text(
+        "⭐ Telegram Premium muddatini tanlang:",
+        reply_markup=kb.as_markup()
     )
+    await callback.answer()
+
+
+# =====================
+# BUYURTMA YARATISH
+# =====================
+
+async def create_order(callback, product, price):
+    cur.execute(
+        "INSERT INTO orders(user_id, product, price) VALUES (?, ?, ?)",
+        (callback.from_user.id, product, price)
+    )
+
     order_id = cur.lastrowid
     db.commit()
 
     await callback.message.edit_text(
-        f"🪙 {package['name']}\n"
-        f"💵 Narxi: {package['price']:,} so‘m\n\n"
-        f"🆔 Buyurtma: #{order_id}\n\n"
+        f"🛒 BUYURTMA #{order_id}\n\n"
+        f"📦 {product}\n"
+        f"💰 Narxi: {price}\n\n"
         f"💳 Karta:\n"
         f"`{CARD_NUMBER}`\n"
         f"👤 {CARD_OWNER}\n\n"
-        "To‘lovni amalga oshirgach, admin tasdiqlaydi.",
+        "To‘lovni amalga oshirgach, shu chatga "
+        "📸 chek/rasm yuboring.\n\n"
+        "⏳ Admin to‘lovni tekshiradi.",
         parse_mode="Markdown",
-        reply_markup=main_menu()
+        reply_markup=main_menu(callback.from_user.id)
     )
 
-    if ADMIN_ID:
-        await bot.send_message(
-            ADMIN_ID,
-            f"🔔 Yangi buyurtma!\n\n"
-            f"🆔 #{order_id}\n"
-            f"👤 ID: {callback.from_user.id}\n"
-            f"🪙 {package['name']}\n"
-            f"💵 {package['price']:,} so‘m"
-        )
+    await bot.send_message(
+        ADMIN_ID,
+        f"🔔 YANGI BUYURTMA\n\n"
+        f"🆔 #{order_id}\n"
+        f"👤 User ID: {callback.from_user.id}\n"
+        f"📦 {product}\n"
+        f"💰 {price}"
+    )
 
+
+@dp.callback_query(F.data.startswith("coin:"))
+async def coin_selected(callback: CallbackQuery):
+    key = callback.data.split(":")[1]
+    name, price = COINS[key]
+
+    await create_order(callback, name, price)
     await callback.answer()
 
+
+@dp.callback_query(F.data.startswith("prem:"))
+async def premium_selected(callback: CallbackQuery):
+    key = callback.data.split(":")[1]
+    name, price = PREMIUM[key]
+
+    await create_order(callback, name, price)
+    await callback.answer()
+
+
+# =====================
+# TO‘LOV
+# =====================
 
 @dp.callback_query(F.data == "payment")
 async def payment(callback: CallbackQuery):
     await callback.message.edit_text(
-        "💳 To‘lov uchun karta:\n\n"
-        f"`{CARD_NUMBER}`\n"
+        "💳 TO‘LOV\n\n"
+        f"Karta: `{CARD_NUMBER}`\n"
         f"👤 {CARD_OWNER}\n\n"
-        "To‘lov qilganingizdan keyin buyurtma raqamingizni saqlang.",
+        "To‘lov qilgandan keyin shu yerga "
+        "📸 chek rasmini yuboring.",
         parse_mode="Markdown",
-        reply_markup=main_menu()
+        reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
 
+
+# =====================
+# CHEK QABUL QILISH
+# =====================
+
+@dp.message(F.photo)
+async def receipt(message: Message):
+    user_id = message.from_user.id
+
+    cur.execute("""
+        SELECT id, product, price
+        FROM orders
+        WHERE user_id = ? AND status = 'Kutilmoqda'
+        ORDER BY id DESC
+        LIMIT 1
+    """, (user_id,))
+
+    order = cur.fetchone()
+
+    if not order:
+        await message.answer(
+            "❗ Kutilayotgan buyurtma topilmadi.\n"
+            "Avval mahsulot tanlang."
+        )
+        return
+
+    order_id, product, price = order
+
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text="✅ Tasdiqlash",
+        callback_data=f"approve:{order_id}"
+    )
+    kb.button(
+        text="❌ Rad etish",
+        callback_data=f"reject:{order_id}"
+    )
+    kb.adjust(2)
+
+    await bot.send_photo(
+        ADMIN_ID,
+        message.photo[-1].file_id,
+        caption=(
+            "🔔 YANGI CHEK!\n\n"
+            f"🆔 Buyurtma: #{order_id}\n"
+            f"👤 User ID: {user_id}\n"
+            f"📦 {product}\n"
+            f"💰 {price}"
+        ),
+        reply_markup=kb.as_markup()
+    )
+
+    await message.answer(
+        f"✅ Chek qabul qilindi!\n\n"
+        f"🆔 Buyurtma: #{order_id}\n"
+        "⏳ Admin tekshiruvini kuting."
+    )
+
+
+# =====================
+# TASDIQLASH
+# =====================
+
+@dp.callback_query(F.data.startswith("approve:"))
+async def approve(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo‘q!", show_alert=True)
+        return
+
+    order_id = int(callback.data.split(":")[1])
+
+    cur.execute(
+        "SELECT user_id FROM orders WHERE id=?",
+        (order_id,)
+    )
+    row = cur.fetchone()
+
+    if not row:
+        await callback.answer("Buyurtma topilmadi.", show_alert=True)
+        return
+
+    user_id = row[0]
+
+    cur.execute(
+        "UPDATE orders SET status='Tasdiqlandi' WHERE id=?",
+        (order_id,)
+    )
+    db.commit()
+
+    await bot.send_message(
+        user_id,
+        f"✅ To‘lovingiz tasdiqlandi!\n\n"
+        f"🆔 Buyurtma: #{order_id}\n"
+        "📦 Buyurtmangiz qayta ishlanmoqda."
+    )
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("✅ Tasdiqlandi!")
+
+
+# =====================
+# RAD ETISH
+# =====================
+
+@dp.callback_query(F.data.startswith("reject:"))
+async def reject(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo‘q!", show_alert=True)
+        return
+
+    order_id = int(callback.data.split(":")[1])
+
+    cur.execute(
+        "SELECT user_id FROM orders WHERE id=?",
+        (order_id,)
+    )
+    row = cur.fetchone()
+
+    if not row:
+        await callback.answer("Buyurtma topilmadi.", show_alert=True)
+        return
+
+    user_id = row[0]
+
+    cur.execute(
+        "UPDATE orders SET status='Rad etildi' WHERE id=?",
+        (order_id,)
+    )
+    db.commit()
+
+    await bot.send_message(
+        user_id,
+        f"❌ To‘lovingiz rad etildi.\n\n"
+        f"🆔 Buyurtma: #{order_id}\n"
+        f"📞 Yordam: {HELP}"
+    )
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("❌ Rad etildi!")
+
+
+# =====================
+# BUYURTMALAR
+# =====================
+
+@dp.callback_query(F.data == "orders")
+async def orders(callback: CallbackQuery):
+    cur.execute("""
+        SELECT id, product, price, status
+        FROM orders
+        WHERE user_id=?
+        ORDER BY id DESC
+        LIMIT 10
+    """, (callback.from_user.id,))
+
+    rows = cur.fetchall()
+
+    if not rows:
+        text = "📋 Hali buyurtmalar yo‘q."
+    else:
+        text = "📋 BUYURTMALARIM\n\n"
+
+        for order_id, product, price, status in rows:
+            text += (
+                f"🆔 #{order_id}\n"
+                f"📦 {product}\n"
+                f"💰 {price}\n"
+                f"📌 {status}\n\n"
+            )
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=main_menu(callback.from_user.id)
+    )
+    await callback.answer()
+
+
+# =====================
+# BALANS
+# =====================
 
 @dp.callback_query(F.data == "balance")
 async def balance(callback: CallbackQuery):
@@ -149,53 +426,76 @@ async def balance(callback: CallbackQuery):
         (callback.from_user.id,)
     )
     row = cur.fetchone()
-    balance = row[0] if row else 0
+
+    bal = row[0] if row else 0
 
     await callback.message.edit_text(
-        f"💰 Sizning balansingiz:\n\n"
-        f"🪙 {balance} monetka",
-        reply_markup=main_menu()
+        f"💰 BALANS\n\n"
+        f"🪙 {bal} monetka",
+        reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
 
 
-@dp.callback_query(F.data == "orders")
-async def orders(callback: CallbackQuery):
+# =====================
+# YORDAM
+# =====================
+
+@dp.callback_query(F.data == "help")
+async def help_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        f"📞 YORDAM\n\n"
+        f"Admin: {HELP}",
+        reply_markup=main_menu(callback.from_user.id)
+    )
+    await callback.answer()
+
+
+# =====================
+# ADMIN PANEL
+# =====================
+
+@dp.callback_query(F.data == "admin")
+async def admin(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Ruxsat yo‘q!", show_alert=True)
+        return
+
+    cur.execute("SELECT COUNT(*) FROM orders")
+    total = cur.fetchone()[0]
+
     cur.execute(
-        "SELECT id, package, amount, status "
-        "FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 10",
-        (callback.from_user.id,)
+        "SELECT COUNT(*) FROM orders WHERE status='Kutilmoqda'"
     )
-    rows = cur.fetchall()
-
-    if not rows:
-        text = "📋 Sizda hali buyurtmalar yo‘q."
-    else:
-        text = "📋 Buyurtmalarim:\n\n"
-
-        for order_id, package, amount, status in rows:
-            text += (
-                f"🆔 #{order_id}\n"
-                f"🪙 {package}\n"
-                f"💵 {amount:,} so‘m\n"
-                f"📌 {status}\n\n"
-            )
+    pending = cur.fetchone()[0]
 
     await callback.message.edit_text(
-        text,
-        reply_markup=main_menu()
+        "👨‍💼 ADMIN PANEL\n\n"
+        f"📋 Jami buyurtmalar: {total}\n"
+        f"⏳ Kutilayotganlar: {pending}\n\n"
+        "🔔 Yangi chek kelganda shu bot orqali "
+        "tasdiqlash/rad etish tugmalari chiqadi.",
+        reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
 
+
+# =====================
+# ORQAGA
+# =====================
 
 @dp.callback_query(F.data == "back")
 async def back(callback: CallbackQuery):
     await callback.message.edit_text(
         "🏠 Bosh menyu:",
-        reply_markup=main_menu()
+        reply_markup=main_menu(callback.from_user.id)
     )
     await callback.answer()
 
+
+# =====================
+# ISHGA TUSHIRISH
+# =====================
 
 async def main():
     print("Bot ishga tushdi...")
