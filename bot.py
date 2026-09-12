@@ -17,7 +17,7 @@ ADMIN_ID = 8483198773
 
 CARD_NUMBER = os.getenv("CARD_NUMBER", "9860 1666 5457 6569")
 CARD_OWNER = "Yunusov Ilhomjon"
-HELP = "8483198773"
+HELP = "@yunusovv_777"
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN topilmadi!")
