@@ -15,9 +15,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 8483198773
 
-CARD_NUMBER = os.getenv("CARD_NUMBER", "KARTA RAILWAY VARIABLEDA")
-CARD_OWNER = "Yunusov Ilhom"
-HELP = "@yunusovv_ku"
+CARD_NUMBER = os.getenv("CARD_NUMBER", "9860 1666 5457 6569")
+CARD_OWNER = "Yunusov Ilhomjon"
+HELP = "@yunusovv_ku" "8483198773"
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN topilmadi!")
